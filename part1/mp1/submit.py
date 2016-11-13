@@ -19,7 +19,6 @@ import sys
 import subprocess
 import json
 import os
-
 """"""""""""""""""""
 """"""""""""""""""""
 class NullDevice:

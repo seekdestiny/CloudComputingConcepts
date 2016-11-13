@@ -33,4 +33,4 @@ Member.o: Member.cpp Member.h
 	g++ -c Member.cpp ${CFLAGS}
 
 clean:
-	rm -rf *.o Application dbg.log msgcount.log stats.log machine.log
+	rm -rf *.o Application dbg.*.log msgcount.log stats.log machine.log
