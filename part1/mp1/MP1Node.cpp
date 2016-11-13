@@ -96,8 +96,8 @@ int MP1Node::initThisNode(Address *joinaddr) {
     /*
      * This function is partially implemented and may require changes
      */
-    int id = *(int*)(&memberNode->addr.addr);
-    int port = *(short*)(&memberNode->addr.addr[4]);
+    //int id = *(int*)(&memberNode->addr.addr);
+    //int port = *(short*)(&memberNode->addr.addr[4]);
 
     memberNode->bFailed = false;
     memberNode->inited = true;
@@ -141,8 +141,20 @@ int MP1Node::finishUpThisNode(){
    /*
     * Your code goes here
     */
+    memberNode->inited = false;
+    cleanupNodeState();
+    return 0;
 }
 
+void MP1Node::cleanupNodeState() {
+    memberNode->inGroup = false;
+    memberNode->bFailed = false;
+    memberNode->nnb = 0;
+    memberNode->heartbeat = 0;
+    memberNode->pingCounter = TFAIL;
+    memberNode->timeOutCounter = -1;
+    initMemberListTable(memberNode);
+}
 /**
  * FUNCTION NAME: nodeLoop
  *
@@ -158,7 +170,7 @@ void MP1Node::nodeLoop() {
     checkMessages();
 
     // Wait until you're in the group...
-    if( !memberNode->inGroup ) {
+    if ( !memberNode->inGroup ) {
         return;
     }
 
@@ -221,11 +233,11 @@ bool MP1Node::recvCallBack(void *env, char *data, int size ) {
 
         if (!existsNodeInMemberListTable(id)) {
             addNodeToMemberListTable(id, port, heartbeat, memberNode->timeOutCounter);
-		} else {
-			MemberListEntry * node = getNodeInMemberListTable(id);
-			node->setheartbeat(heartbeat);
-			node->settimestamp(memberNode->timeOutCounter);
-		}
+        } else {
+            MemberListEntry * node = getNodeInMemberListTable(id);
+            node->setheartbeat(heartbeat);
+            node->settimestamp(memberNode->timeOutCounter);
+        }
     }
 
     return true;
@@ -371,10 +383,57 @@ void MP1Node::nodeLoopOps() {
     /*
      * Your code goes here
      */
+    if (memberNode->pingCounter == 0) {
+        memberNode->heartbeat++;
+        for (std::vector<MemberListEntry>::iterator it = memberNode->memberList.begin(); it != memberNode->memberList.end(); ++it) {
+            Address nodeAddress = getNodeAddress(it->getid(), it->getport());
+            
+            if (!isAddressEqualToNodeAddress(&nodeAddress)) {
+                 sendGOSSIPMessage(&nodeAddress);
+            }
+        }
+        memberNode->pingCounter = TFAIL;
+    } else{
+        memberNode->pingCounter--;
+    }
+
+    for (std::vector<MemberListEntry>::iterator it = memberNode->memberList.begin(); it != memberNode->memberList.end(); ++it) {
+        Address nodeAddress = getNodeAddress(it->getid(), it->getport());
+        if (!isAddressEqualToNodeAddress(&nodeAddress)) {
+            if (memberNode->timeOutCounter - it->timestamp > TREMOVE) {
+                memberNode->memberList.erase(it);
+
+#ifdef DEBUGLOG
+    log->logNodeRemove(&memberNode->addr, &nodeAddress);
+#endif
+                break;
+            }
+        }
+    }
+
+    memberNode->timeOutCounter++;
 
     return;
 }
 
+bool MP1Node::isAddressEqualToNodeAddress(Address *address) {
+    return (memcmp((char*)&(memberNode->addr.addr), (char*)&(address->addr), sizeof(memberNode->addr.addr)) == 0); 
+}
+
+void MP1Node::sendGOSSIPMessage(Address *destinationAddr) {
+    size_t msgsize = sizeof(MessageHdr) + sizeof(destinationAddr->addr) + sizeof(long) + 1;
+    MessageHdr *msg = (MessageHdr *) malloc(msgsize * sizeof(char));
+        
+    // Create GOSSIP message
+    msg->msgType = GOSSIP;
+    memcpy((char*)(msg + 1), &memberNode->addr.addr, sizeof(memberNode->addr.addr));
+    memcpy((char*)(msg + 1) + sizeof(memberNode->addr.addr), &memberNode->heartbeat, sizeof(long));
+
+    // Send HEARTBEAT message to destination node
+    emulNet->ENsend(&memberNode->addr, destinationAddr, (char *)msg, msgsize);
+
+    free(msg);
+}
 /**
  * FUNCTION NAME: isNullAddress
  *
